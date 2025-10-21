@@ -90,7 +90,7 @@ export function mastraMsgsToAGUI(mastraMessages: MastraMemoryMessage[]): AGUIMes
     try {
       aguiMessages.push(mastraMsgToAGUI(mastraMsg));
     } catch (error) {
-      console.error(`Failed to convert message ${mastraMsg.id}:`, error);
+      // Silently handle error
     }
   }
 

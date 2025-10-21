@@ -36,7 +36,6 @@ export async function loadAgentState(
   try {
     const memory = await mastraAgent.getMemory();
     if (!memory) {
-      console.info(`[loadAgentState] Agent ${agentId} has no memory configured`);
       return emptySnapshot;
     }
 
@@ -44,12 +43,10 @@ export async function loadAgentState(
     try {
       thread = await memory.getThreadById({ threadId });
     } catch (error) {
-      console.info(`[loadAgentState] Thread ${threadId} not found (may be new thread)`);
       return emptySnapshot;
     }
 
     if (!thread) {
-      console.info(`[loadAgentState] Thread ${threadId} returned null`);
       return emptySnapshot;
     }
 
@@ -61,9 +58,8 @@ export async function loadAgentState(
       });
 
       mastraMessages = (queryResult.uiMessages || []) as MastraMemoryMessage[];
-      console.info(`[loadAgentState] Loaded ${mastraMessages.length} messages for thread ${threadId}`);
     } catch (error) {
-      console.error(`[loadAgentState] Failed to fetch messages for thread ${threadId}:`, error);
+      // Silently handle error
     }
 
     const aguiMessages = mastraMsgsToAGUI(mastraMessages);
@@ -77,7 +73,7 @@ export async function loadAgentState(
           workingMemory = thread.metadata.workingMemory as Record<string, any>;
         }
       } catch (error) {
-        console.error(`[loadAgentState] Failed to parse working memory:`, error);
+        // Silently handle error
       }
     }
 
@@ -90,7 +86,6 @@ export async function loadAgentState(
       workingMemory,
     };
   } catch (error) {
-    console.error(`[loadAgentState] Unexpected error loading state for thread ${threadId}:`, error);
     return emptySnapshot;
   }
 }
