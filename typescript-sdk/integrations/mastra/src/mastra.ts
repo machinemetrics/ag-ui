@@ -65,8 +65,10 @@ export class MastraAgent extends AbstractAgent {
     this.agent = agent;
     this.resourceId = resourceId;
     this.runtimeContext = runtimeContext ?? new RuntimeContext();
-    // TODO: this should likely be reworked. async constructor pattern is weird
-    // Create LangGraph-compatible client interface for CopilotKit
+    // Create LangGraph-compatible client interface for CopilotKit compatibility.
+    // CopilotKit calls agent.client.threads.getState() before run() to load previous
+    // conversation state for rehydration. This is separate from the state loading that
+    // happens within run() which emits MESSAGES_SNAPSHOT and STATE_SNAPSHOT events.
     if (this.isLocalMastraAgent(agent)) {
       this.client = {
         threads: {
