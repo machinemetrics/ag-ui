@@ -62,7 +62,7 @@ export async function loadAgentState(
   }
 
   return {
-    threadsExist: true,
+    threadsExist: aguiMessages.length > 0,
     agentId,
     resourceId,
     threadId,
