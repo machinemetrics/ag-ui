@@ -337,16 +337,20 @@ export class MastraAgent extends AbstractAgent {
       return messages;
     }
 
-    const { uiMessages: existingMessages } = await memory.query({
-      threadId,
-      resourceId: this.resourceId,
-    });
+    try {
+      const { uiMessages: existingMessages } = await memory.query({
+        threadId,
+        resourceId: this.resourceId,
+      });
 
-    const existingIds = new Set(existingMessages.map((m: any) => m.id));
+      const existingIds = new Set(existingMessages.map((m: any) => m.id));
 
-    const newMessages = messages.filter((msg) => !existingIds.has(msg.id));
+      const newMessages = messages.filter((msg) => !existingIds.has(msg.id));
 
-    return newMessages;
+      return newMessages;
+    } catch {
+      return messages;
+    }
   }
 
   /**

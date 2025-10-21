@@ -33,40 +33,44 @@ export async function loadAgentState(
     workingMemory: undefined,
   };
 
-  const memory = await mastraAgent.getMemory();
-  if (!memory) {
-    return emptySnapshot;
-  }
-
-  const thread = await memory.getThreadById({ threadId });
-
-  if (!thread) {
-    return emptySnapshot;
-  }
-
-  const queryResult = await memory.query({
-    threadId,
-    resourceId,
-  });
-
-  const mastraMessages = (queryResult.uiMessages || []) as MastraMemoryMessage[];
-  const aguiMessages = mastraMsgsToAGUI(mastraMessages);
-
-  let workingMemory: Record<string, any> | undefined;
-  if (thread.metadata?.workingMemory) {
-    if (typeof thread.metadata.workingMemory === "string") {
-      workingMemory = JSON.parse(thread.metadata.workingMemory);
-    } else if (typeof thread.metadata.workingMemory === "object") {
-      workingMemory = thread.metadata.workingMemory as Record<string, any>;
+  try {
+    const memory = await mastraAgent.getMemory();
+    if (!memory) {
+      return emptySnapshot;
     }
-  }
 
-  return {
-    threadsExist: aguiMessages.length > 0,
-    agentId,
-    resourceId,
-    threadId,
-    messages: aguiMessages,
-    workingMemory,
-  };
+    const thread = await memory.getThreadById({ threadId });
+
+    if (!thread) {
+      return emptySnapshot;
+    }
+
+    const queryResult = await memory.query({
+      threadId,
+      resourceId,
+    });
+
+    const mastraMessages = (queryResult.uiMessages || []) as MastraMemoryMessage[];
+    const aguiMessages = mastraMsgsToAGUI(mastraMessages);
+
+    let workingMemory: Record<string, any> | undefined;
+    if (thread.metadata?.workingMemory) {
+      if (typeof thread.metadata.workingMemory === "string") {
+        workingMemory = JSON.parse(thread.metadata.workingMemory);
+      } else if (typeof thread.metadata.workingMemory === "object") {
+        workingMemory = thread.metadata.workingMemory as Record<string, any>;
+      }
+    }
+
+    return {
+      threadsExist: aguiMessages.length > 0,
+      agentId,
+      resourceId,
+      threadId,
+      messages: aguiMessages,
+      workingMemory,
+    };
+  } catch {
+    return emptySnapshot;
+  }
 }
