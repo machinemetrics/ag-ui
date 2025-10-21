@@ -65,7 +65,7 @@ export class MastraAgent extends AbstractAgent {
     this.agent = agent;
     this.resourceId = resourceId;
     this.runtimeContext = runtimeContext ?? new RuntimeContext();
-
+    // TODO: this should likely be reworked. async constructor pattern is weird
     // Create LangGraph-compatible client interface for CopilotKit
     if (this.isLocalMastraAgent(agent)) {
       this.client = {
@@ -82,7 +82,7 @@ export class MastraAgent extends AbstractAgent {
                 threadId,
                 limit: 100,
               },
-              agent
+              agent,
             );
 
             // Convert AG-UI messages to LangChain format for CopilotKit
@@ -119,34 +119,33 @@ export class MastraAgent extends AbstractAgent {
         // Load thread history if threadId present and using local agent
         if (input.threadId && this.isLocalMastraAgent(this.agent)) {
           if (this.resourceId) {
-            try {
-              const stateSnapshot = await loadAgentState(
-                {
-                  agentId: this.agentId!,
-                  resourceId: this.resourceId,
-                  threadId: input.threadId,
-                  limit: 100,
-                },
-                this.agent
-              );
+            const stateSnapshot = await loadAgentState(
+              {
+                agentId: this.agentId!,
+                resourceId: this.resourceId,
+                threadId: input.threadId,
+                limit: 100,
+              },
+              this.agent,
+            );
 
-              if (stateSnapshot.threadsExist && stateSnapshot.messages.length > 0) {
-                const messagesSnapshotEvent: MessagesSnapshotEvent = {
-                  type: EventType.MESSAGES_SNAPSHOT,
-                  messages: stateSnapshot.messages as Message[],
-                };
-                subscriber.next(messagesSnapshotEvent);
-              }
+            if (stateSnapshot.threadsExist && stateSnapshot.messages.length > 0) {
+              const messagesSnapshotEvent: MessagesSnapshotEvent = {
+                type: EventType.MESSAGES_SNAPSHOT,
+                messages: stateSnapshot.messages as Message[],
+              };
+              subscriber.next(messagesSnapshotEvent);
+            }
 
-              if (stateSnapshot.workingMemory && Object.keys(stateSnapshot.workingMemory).length > 0) {
-                const stateSnapshotEvent: StateSnapshotEvent = {
-                  type: EventType.STATE_SNAPSHOT,
-                  snapshot: stateSnapshot.workingMemory,
-                };
-                subscriber.next(stateSnapshotEvent);
-              }
-            } catch (error) {
-              // Silently handle error
+            if (
+              stateSnapshot.workingMemory &&
+              Object.keys(stateSnapshot.workingMemory).length > 0
+            ) {
+              const stateSnapshotEvent: StateSnapshotEvent = {
+                type: EventType.STATE_SNAPSHOT,
+                snapshot: stateSnapshot.workingMemory,
+              };
+              subscriber.next(stateSnapshotEvent);
             }
           }
         }
@@ -268,24 +267,20 @@ export class MastraAgent extends AbstractAgent {
                     }
 
                     // Emit MESSAGES_SNAPSHOT with complete message list (matches LangGraph pattern)
-                    try {
-                      const { uiMessages } = await memory.query({
-                        threadId: input.threadId,
-                        resourceId: this.resourceId,
-                      });
+                    const { uiMessages } = await memory.query({
+                      threadId: input.threadId,
+                      resourceId: this.resourceId,
+                    });
 
-                      if (uiMessages && uiMessages.length > 0) {
-                        const { mastraMsgsToAGUI } = await import("./utils/messages.js");
-                        const aguiMessages = mastraMsgsToAGUI(uiMessages as any);
+                    if (uiMessages && uiMessages.length > 0) {
+                      const { mastraMsgsToAGUI } = await import("./utils/messages.js");
+                      const aguiMessages = mastraMsgsToAGUI(uiMessages as any);
 
-                        const messagesSnapshotEvent: MessagesSnapshotEvent = {
-                          type: EventType.MESSAGES_SNAPSHOT,
-                          messages: aguiMessages as Message[],
-                        };
-                        subscriber.next(messagesSnapshotEvent);
-                      }
-                    } catch (error) {
-                      // Silently handle error
+                      const messagesSnapshotEvent: MessagesSnapshotEvent = {
+                        type: EventType.MESSAGES_SNAPSHOT,
+                        messages: aguiMessages as Message[],
+                      };
+                      subscriber.next(messagesSnapshotEvent);
                     }
                   }
                 } catch (error) {
@@ -335,25 +330,21 @@ export class MastraAgent extends AbstractAgent {
       return messages;
     }
 
-    try {
-      const memory = await this.agent.getMemory();
-      if (!memory) {
-        return messages;
-      }
-
-      const { uiMessages: existingMessages } = await memory.query({
-        threadId,
-        resourceId: this.resourceId,
-      });
-
-      const existingIds = new Set(existingMessages.map((m: any) => m.id));
-
-      const newMessages = messages.filter((msg) => !existingIds.has(msg.id));
-
-      return newMessages;
-    } catch (error) {
+    const memory = await this.agent.getMemory();
+    if (!memory) {
       return messages;
     }
+
+    const { uiMessages: existingMessages } = await memory.query({
+      threadId,
+      resourceId: this.resourceId,
+    });
+
+    const existingIds = new Set(existingMessages.map((m: any) => m.id));
+
+    const newMessages = messages.filter((msg) => !existingIds.has(msg.id));
+
+    return newMessages;
   }
 
   /**
@@ -388,7 +379,7 @@ export class MastraAgent extends AbstractAgent {
 
     const messagesToSend = await this.getNewMessages({ threadId, messages });
     const convertedMessages = convertAGUIMessagesToMastra(messagesToSend);
-    this.runtimeContext?.set('ag-ui', { context: inputContext });
+    this.runtimeContext?.set("ag-ui", { context: inputContext });
     const runtimeContext = this.runtimeContext;
 
     if (this.isLocalMastraAgent(this.agent)) {
