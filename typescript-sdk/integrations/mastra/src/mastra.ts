@@ -35,9 +35,36 @@ import {
 } from "./utils";
 import { loadAgentState } from "./server/loadAgentState.js";
 
+/**
+ * Configuration for creating a MastraAgent
+ */
 export interface MastraAgentConfig extends AgentConfig {
+  /** The Mastra agent instance (local or remote) */
   agent: LocalMastraAgent | RemoteMastraAgent;
+  /**
+   * Resource identifier for scoping thread data to a specific user, tenant, or group.
+   *
+   * @remarks
+   * - **With resourceId**: Thread history and state are scoped to this resource for multi-tenant isolation
+   * - **Without resourceId**: Agent operates in stateless mode - no thread history is loaded or persisted
+   *
+   * @example
+   * ```typescript
+   * // Multi-tenant setup (recommended)
+   * const agent = new MastraAgent({
+   *   agent: mastraAgent,
+   *   resourceId: "user-123", // Scopes to specific user
+   * });
+   *
+   * // Stateless mode (no history)
+   * const agent = new MastraAgent({
+   *   agent: mastraAgent,
+   *   // resourceId omitted - no thread persistence
+   * });
+   * ```
+   */
   resourceId?: string;
+  /** Optional runtime context for passing additional data to the agent */
   runtimeContext?: RuntimeContext;
 }
 
@@ -166,7 +193,7 @@ export class MastraAgent extends AbstractAgent {
                 id: input.threadId,
                 title: "",
                 metadata: {},
-                resourceId: this.resourceId ?? input.threadId,
+                resourceId: this.resourceId,
                 createdAt: new Date(),
                 updatedAt: new Date(),
               };
@@ -381,7 +408,7 @@ export class MastraAgent extends AbstractAgent {
       },
       {} as Record<string, any>,
     );
-    const resourceId = this.resourceId ?? threadId;
+    const resourceId = this.resourceId;
 
     const messagesToSend = await this.getNewMessages({ threadId, messages });
     const convertedMessages = convertAGUIMessagesToMastra(messagesToSend);

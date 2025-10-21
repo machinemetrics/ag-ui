@@ -130,11 +130,19 @@ export function aguiMessagesToLangChain(messages: AGUIMessage[]): LangChainMessa
 
     // AI messages must always have tool_calls array (even if empty)
     if (msg.role === "assistant") {
-      langChainMsg.tool_calls = (msg.toolCalls || []).map((tc) => ({
-        id: tc.id,
-        name: tc.function.name,
-        args: JSON.parse(tc.function.arguments),
-      }));
+      langChainMsg.tool_calls = (msg.toolCalls || [])
+        .map((tc) => {
+          try {
+            return {
+              id: tc.id,
+              name: tc.function.name,
+              args: JSON.parse(tc.function.arguments),
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
     }
 
     // Add tool_call_id for tool messages
