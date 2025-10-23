@@ -34,6 +34,7 @@ import {
   getNetwork,
 } from "./utils";
 import { loadAgentState } from "./server/loadAgentState.js";
+import { aguiMessagesToLangChain, mastraMsgsToAGUI } from "./utils/messages.js";
 
 /**
  * Configuration for creating a MastraAgent
@@ -115,7 +116,6 @@ export class MastraAgent extends AbstractAgent {
             );
 
             // Convert AG-UI messages to LangChain format for CopilotKit
-            const { aguiMessagesToLangChain } = await import("./utils/messages.js");
             const langChainMessages = aguiMessagesToLangChain(stateSnapshot.messages);
 
             const returnValue = {
@@ -302,7 +302,6 @@ export class MastraAgent extends AbstractAgent {
                     });
 
                     if (uiMessages && uiMessages.length > 0) {
-                      const { mastraMsgsToAGUI } = await import("./utils/messages.js");
                       const aguiMessages = mastraMsgsToAGUI(uiMessages as any);
 
                       const messagesSnapshotEvent: MessagesSnapshotEvent = {
