@@ -1,6 +1,8 @@
 import type {
   AgentConfig,
   BaseEvent,
+  Message,
+  MessagesSnapshotEvent,
   RunAgentInput,
   RunFinishedEvent,
   RunStartedEvent,
@@ -31,10 +33,39 @@ import {
   GetNetworkOptions,
   getNetwork,
 } from "./utils";
+import { loadAgentState } from "./server/loadAgentState.js";
+import { aguiMessagesToLangChain, mastraMsgsToAGUI } from "./utils/messages.js";
 
+/**
+ * Configuration for creating a MastraAgent
+ */
 export interface MastraAgentConfig extends AgentConfig {
+  /** The Mastra agent instance (local or remote) */
   agent: LocalMastraAgent | RemoteMastraAgent;
+  /**
+   * Resource identifier for scoping thread data to a specific user, tenant, or group.
+   *
+   * @remarks
+   * - **With resourceId**: Thread history and state are scoped to this resource for multi-tenant isolation
+   * - **Without resourceId**: Agent operates in stateless mode - no thread history is loaded or persisted
+   *
+   * @example
+   * ```typescript
+   * // Multi-tenant setup (recommended)
+   * const agent = new MastraAgent({
+   *   agent: mastraAgent,
+   *   resourceId: "user-123", // Scopes to specific user
+   * });
+   *
+   * // Stateless mode (no history)
+   * const agent = new MastraAgent({
+   *   agent: mastraAgent,
+   *   // resourceId omitted - no thread persistence
+   * });
+   * ```
+   */
   resourceId?: string;
+  /** Optional runtime context for passing additional data to the agent */
   runtimeContext?: RuntimeContext;
 }
 
@@ -51,12 +82,54 @@ export class MastraAgent extends AbstractAgent {
   agent: LocalMastraAgent | RemoteMastraAgent;
   resourceId?: string;
   runtimeContext?: RuntimeContext;
+  client?: {
+    threads: {
+      getState(threadId: string): Promise<{ values: Record<string, any> }>;
+    };
+  };
 
   constructor({ agent, resourceId, runtimeContext, ...rest }: MastraAgentConfig) {
     super(rest);
     this.agent = agent;
     this.resourceId = resourceId;
     this.runtimeContext = runtimeContext ?? new RuntimeContext();
+    // Create LangGraph-compatible client interface for CopilotKit compatibility.
+    // CopilotKit calls agent.client.threads.getState() before run() to load previous
+    // conversation state for rehydration. This is separate from the state loading that
+    // happens within run() which emits MESSAGES_SNAPSHOT and STATE_SNAPSHOT events.
+    if (this.isLocalMastraAgent(agent)) {
+      this.client = {
+        threads: {
+          getState: async (threadId: string) => {
+            if (!this.resourceId) {
+              return { values: { messages: [] } };
+            }
+
+            const stateSnapshot = await loadAgentState(
+              {
+                agentId: this.agentId!,
+                resourceId: this.resourceId,
+                threadId,
+                limit: 100,
+              },
+              agent,
+            );
+
+            // Convert AG-UI messages to LangChain format for CopilotKit
+            const langChainMessages = aguiMessagesToLangChain(stateSnapshot.messages);
+
+            const returnValue = {
+              values: {
+                messages: langChainMessages,
+                ...stateSnapshot.workingMemory,
+              },
+            };
+
+            return returnValue;
+          },
+        },
+      };
+    }
   }
 
   protected run(input: RunAgentInput): Observable<BaseEvent> {
@@ -72,6 +145,40 @@ export class MastraAgent extends AbstractAgent {
 
         subscriber.next(runStartedEvent);
 
+        // Load thread history if threadId present and using local agent
+        if (input.threadId && this.isLocalMastraAgent(this.agent)) {
+          if (this.resourceId) {
+            const stateSnapshot = await loadAgentState(
+              {
+                agentId: this.agentId!,
+                resourceId: this.resourceId,
+                threadId: input.threadId,
+                limit: 100,
+              },
+              this.agent,
+            );
+
+            if (stateSnapshot.threadsExist && stateSnapshot.messages.length > 0) {
+              const messagesSnapshotEvent: MessagesSnapshotEvent = {
+                type: EventType.MESSAGES_SNAPSHOT,
+                messages: stateSnapshot.messages as Message[],
+              };
+              subscriber.next(messagesSnapshotEvent);
+            }
+
+            if (
+              stateSnapshot.workingMemory &&
+              Object.keys(stateSnapshot.workingMemory).length > 0
+            ) {
+              const stateSnapshotEvent: StateSnapshotEvent = {
+                type: EventType.STATE_SNAPSHOT,
+                snapshot: stateSnapshot.workingMemory,
+              };
+              subscriber.next(stateSnapshotEvent);
+            }
+          }
+        }
+
         // Handle local agent memory management (from Mastra implementation)
         if (this.isLocalMastraAgent(this.agent)) {
           const memory = await this.agent.getMemory();
@@ -86,22 +193,22 @@ export class MastraAgent extends AbstractAgent {
                 id: input.threadId,
                 title: "",
                 metadata: {},
-                resourceId: this.resourceId ?? input.threadId,
                 createdAt: new Date(),
                 updatedAt: new Date(),
+                resourceId: this.resourceId!,
               };
             }
 
-            const existingMemory = JSON.parse((thread.metadata?.workingMemory as string) ?? "{}");
+            const existingMemory = JSON.parse((thread!.metadata?.workingMemory as string) ?? "{}");
             const { messages, ...rest } = input.state;
             const workingMemory = JSON.stringify({ ...existingMemory, ...rest });
 
             // Update thread metadata with new working memory
             await memory.saveThread({
               thread: {
-                ...thread,
+                ...thread!,
                 metadata: {
-                  ...thread.metadata,
+                  ...thread!.metadata,
                   workingMemory,
                 },
               },
@@ -187,6 +294,22 @@ export class MastraAgent extends AbstractAgent {
                         subscriber.next(stateSnapshotEvent);
                       }
                     }
+
+                    // Emit MESSAGES_SNAPSHOT with complete message list (matches LangGraph pattern)
+                    const { uiMessages } = await memory.query({
+                      threadId: input.threadId,
+                      resourceId: this.resourceId,
+                    });
+
+                    if (uiMessages && uiMessages.length > 0) {
+                      const aguiMessages = mastraMsgsToAGUI(uiMessages as any);
+
+                      const messagesSnapshotEvent: MessagesSnapshotEvent = {
+                        type: EventType.MESSAGES_SNAPSHOT,
+                        messages: aguiMessages as Message[],
+                      };
+                      subscriber.next(messagesSnapshotEvent);
+                    }
                   }
                 } catch (error) {
                   console.error("Error sending state snapshot", error);
@@ -220,6 +343,42 @@ export class MastraAgent extends AbstractAgent {
     return "getMemory" in agent;
   }
 
+  private async getNewMessages({
+    threadId,
+    messages,
+  }: {
+    threadId?: string;
+    messages: Message[];
+  }): Promise<Message[]> {
+    if (!threadId) {
+      return messages;
+    }
+
+    if (!this.isLocalMastraAgent(this.agent)) {
+      return messages;
+    }
+
+    const memory = await this.agent.getMemory();
+    if (!memory) {
+      return messages;
+    }
+
+    try {
+      const { uiMessages: existingMessages } = await memory.query({
+        threadId,
+        resourceId: this.resourceId,
+      });
+
+      const existingIds = new Set(existingMessages.map((m: any) => m.id));
+
+      const newMessages = messages.filter((msg) => !existingIds.has(msg.id));
+
+      return newMessages;
+    } catch {
+      return messages;
+    }
+  }
+
   /**
    * Streams in process or remote mastra agent.
    * @param input - The input for the mastra agent.
@@ -248,21 +407,30 @@ export class MastraAgent extends AbstractAgent {
       },
       {} as Record<string, any>,
     );
-    const resourceId = this.resourceId ?? threadId;
-    const convertedMessages = convertAGUIMessagesToMastra(messages);
-    this.runtimeContext?.set('ag-ui', { context: inputContext });
+    const resourceId = this.resourceId;
+
+    const messagesToSend = await this.getNewMessages({ threadId, messages });
+    const convertedMessages = convertAGUIMessagesToMastra(messagesToSend);
+    this.runtimeContext?.set("ag-ui", { context: inputContext });
     const runtimeContext = this.runtimeContext;
 
     if (this.isLocalMastraAgent(this.agent)) {
       // Local agent - use the agent's stream method directly
       try {
-        const response = await this.agent.stream(convertedMessages, {
-          threadId,
-          resourceId,
+        // Base stream options without thread/resource parameters
+        const baseStreamOptions = {
           runId,
           clientTools,
           runtimeContext,
-        });
+        };
+
+        // Only include threadId and resourceId if both are available
+        const streamOptions =
+          threadId && resourceId
+            ? { ...baseStreamOptions, threadId, resourceId }
+            : baseStreamOptions;
+
+        const response = await this.agent.stream(convertedMessages, streamOptions);
 
         // For local agents, the response should already be a stream
         // Process it using the agent's built-in streaming mechanism
@@ -305,13 +473,20 @@ export class MastraAgent extends AbstractAgent {
     } else {
       // Remote agent - use the remote agent's stream method
       try {
-        const response = await this.agent.stream({
-          threadId,
-          resourceId,
+        // Base stream options without thread/resource parameters
+        const baseStreamOptions = {
           runId,
           messages: convertedMessages,
           clientTools,
-        });
+        };
+
+        // Only include threadId and resourceId if both are available
+        const streamOptions =
+          threadId && resourceId
+            ? { ...baseStreamOptions, threadId, resourceId }
+            : baseStreamOptions;
+
+        const response = await this.agent.stream(streamOptions);
 
         // Remote agents should have a processDataStream method
         if (response && typeof response.processDataStream === "function") {
