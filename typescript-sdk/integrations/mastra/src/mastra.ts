@@ -193,22 +193,22 @@ export class MastraAgent extends AbstractAgent {
                 id: input.threadId,
                 title: "",
                 metadata: {},
-                resourceId: this.resourceId,
                 createdAt: new Date(),
                 updatedAt: new Date(),
+                resourceId: this.resourceId!,
               };
             }
 
-            const existingMemory = JSON.parse((thread.metadata?.workingMemory as string) ?? "{}");
+            const existingMemory = JSON.parse((thread!.metadata?.workingMemory as string) ?? "{}");
             const { messages, ...rest } = input.state;
             const workingMemory = JSON.stringify({ ...existingMemory, ...rest });
 
             // Update thread metadata with new working memory
             await memory.saveThread({
               thread: {
-                ...thread,
+                ...thread!,
                 metadata: {
-                  ...thread.metadata,
+                  ...thread!.metadata,
                   workingMemory,
                 },
               },
@@ -417,13 +417,20 @@ export class MastraAgent extends AbstractAgent {
     if (this.isLocalMastraAgent(this.agent)) {
       // Local agent - use the agent's stream method directly
       try {
-        const response = await this.agent.stream(convertedMessages, {
-          threadId,
-          resourceId,
+        // Base stream options without thread/resource parameters
+        const baseStreamOptions = {
           runId,
           clientTools,
           runtimeContext,
-        });
+        };
+
+        // Only include threadId and resourceId if both are available
+        const streamOptions =
+          threadId && resourceId
+            ? { ...baseStreamOptions, threadId, resourceId }
+            : baseStreamOptions;
+
+        const response = await this.agent.stream(convertedMessages, streamOptions);
 
         // For local agents, the response should already be a stream
         // Process it using the agent's built-in streaming mechanism
@@ -466,13 +473,20 @@ export class MastraAgent extends AbstractAgent {
     } else {
       // Remote agent - use the remote agent's stream method
       try {
-        const response = await this.agent.stream({
-          threadId,
-          resourceId,
+        // Base stream options without thread/resource parameters
+        const baseStreamOptions = {
           runId,
           messages: convertedMessages,
           clientTools,
-        });
+        };
+
+        // Only include threadId and resourceId if both are available
+        const streamOptions =
+          threadId && resourceId
+            ? { ...baseStreamOptions, threadId, resourceId }
+            : baseStreamOptions;
+
+        const response = await this.agent.stream(streamOptions);
 
         // Remote agents should have a processDataStream method
         if (response && typeof response.processDataStream === "function") {
