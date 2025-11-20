@@ -21,6 +21,8 @@ import { RuntimeContext } from "@mastra/core/runtime-context";
 import { randomUUID } from "crypto";
 import { Observable } from "rxjs";
 import { MastraClient } from "@mastra/client-js";
+import { toAISdkFormat } from "@mastra/ai-sdk";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 type RemoteMastraAgent = ReturnType<MastraClient["getAgent"]>;
 import {
   convertAGUIMessagesToMastra,
@@ -430,43 +432,35 @@ export class MastraAgent extends AbstractAgent {
             ? { ...baseStreamOptions, threadId, resourceId }
             : baseStreamOptions;
 
-        const response = await this.agent.stream(convertedMessages, streamOptions);
+        const mastraStream = await this.agent.stream(convertedMessages, streamOptions);
 
-        // For local agents, the response should already be a stream
-        // Process it using the agent's built-in streaming mechanism
-        if (response && typeof response === "object") {
-          // If the response has a toDataStreamResponse method, use it
-          if (
-            "toDataStreamResponse" in response &&
-            typeof response.toDataStreamResponse === "function"
-          ) {
-            const dataStreamResponse = response.toDataStreamResponse();
-            if (dataStreamResponse && dataStreamResponse.body) {
-              await processDataStream({
-                stream: dataStreamResponse.body,
-                onTextPart,
-                onToolCallPart,
-                onToolResultPart,
-                onFinishMessagePart,
+        // Iterate over fullStream and handle each part
+        for await (const part of mastraStream.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              await onTextPart?.(part.textDelta);
+              break;
+            case 'tool-call':
+              await onToolCallPart?.({
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                args: part.args,
               });
-              await onRunFinished?.();
-            } else {
-              throw new Error("Invalid data stream response from local agent");
-            }
-          } else {
-            // If it's already a readable stream, process it directly
-            await processDataStream({
-              stream: response as any,
-              onTextPart,
-              onToolCallPart,
-              onToolResultPart,
-              onFinishMessagePart,
-            });
-            await onRunFinished?.();
+              break;
+            case 'tool-result':
+              await onToolResultPart?.({
+                toolCallId: part.toolCallId,
+                result: part.result,
+              });
+              break;
+            case 'finish':
+              await onFinishMessagePart?.();
+              break;
+            case 'error':
+              throw new Error(String(part.error));
           }
-        } else {
-          throw new Error("Invalid response from local agent");
         }
+        await onRunFinished?.();
       } catch (error) {
         onError?.(error as Error);
       }

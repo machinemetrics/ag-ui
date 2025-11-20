@@ -1,6 +1,6 @@
 {
   "name": "@m12s/agui-mastra",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "license": "Apache-2.0",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -24,8 +24,10 @@
     "unlink:global": "pnpm unlink --global"
   },
   "dependencies": {
-    "@ai-sdk/ui-utils": "^1.1.19",
+    "@ai-sdk/ui-utils": "^1.2.0",
+    "@mastra/ai-sdk": "^1.0.1",
     "@mastra/client-js": "^0.10.18",
+    "ai": "^5.0.0",
     "rxjs": "7.8.1"
   },
   "peerDependencies": {
