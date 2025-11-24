@@ -238,10 +238,12 @@ export class MastraAgent extends AbstractAgent {
               };
               subscriber.next(startEvent);
 
+              // Ensure args is always an object, even if undefined
+              const args = streamPart.args !== undefined ? streamPart.args : {};
               const argsEvent: ToolCallArgsEvent = {
                 type: EventType.TOOL_CALL_ARGS,
                 toolCallId: streamPart.toolCallId,
-                delta: JSON.stringify(streamPart.args),
+                delta: JSON.stringify(args),
               };
               subscriber.next(argsEvent);
 
@@ -252,11 +254,13 @@ export class MastraAgent extends AbstractAgent {
               subscriber.next(endEvent);
             },
             onToolResultPart(streamPart) {
+              const resultMessageId = randomUUID();
+
               const toolCallResultEvent: ToolCallResultEvent = {
                 type: EventType.TOOL_CALL_RESULT,
                 toolCallId: streamPart.toolCallId,
                 content: JSON.stringify(streamPart.result),
-                messageId: randomUUID(),
+                messageId: resultMessageId,
                 role: "tool",
               };
 
@@ -440,19 +444,27 @@ export class MastraAgent extends AbstractAgent {
             case 'text-delta':
               await onTextPart?.(part.textDelta);
               break;
-            case 'tool-call':
+            case 'tool-call': {
+              // Tool call data is nested in payload at runtime
+              const toolCallPart = part as any;
+              const payload = toolCallPart.payload || toolCallPart;
               await onToolCallPart?.({
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                args: part.args,
+                toolCallId: payload.toolCallId,
+                toolName: payload.toolName,
+                args: payload.args !== undefined ? payload.args : {},
               });
               break;
-            case 'tool-result':
+            }
+            case 'tool-result': {
+              // Tool result data is nested in payload at runtime
+              const toolResultPart = part as any;
+              const payload = toolResultPart.payload || toolResultPart;
               await onToolResultPart?.({
-                toolCallId: part.toolCallId,
-                result: part.result,
+                toolCallId: payload.toolCallId,
+                result: payload.result,
               });
               break;
+            }
             case 'finish':
               await onFinishMessagePart?.();
               break;

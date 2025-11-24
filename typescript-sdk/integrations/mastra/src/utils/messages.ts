@@ -27,6 +27,11 @@ export interface MastraMemoryMessage {
 export function mastraMsgToAGUI(mastraMessage: MastraMemoryMessage): AGUIMessage {
   const { id, role, content, metadata } = mastraMessage;
 
+  // Ensure we always have an ID - critical for CopilotKit GraphQL serialization
+  if (!id) {
+    throw new Error(`Message missing required 'id' field. Role: ${role}`);
+  }
+
   let textContent = "";
   let toolCalls: AGUIMessage["toolCalls"] = undefined;
   let toolCallId: string | undefined = undefined;
@@ -90,7 +95,8 @@ export function mastraMsgsToAGUI(mastraMessages: MastraMemoryMessage[]): AGUIMes
     try {
       aguiMessages.push(mastraMsgToAGUI(mastraMsg));
     } catch (error) {
-      // Silently handle error
+      // Log error for debugging but continue processing other messages
+      console.error('[mastraMsgsToAGUI] Error converting message:', error, 'Message:', mastraMsg);
     }
   }
 
