@@ -444,6 +444,19 @@ export class MastraAgent extends AbstractAgent {
             case 'text-delta':
               await onTextPart?.(part.textDelta);
               break;
+            case 'step-start':
+              // Step started - no text content to emit
+              break;
+            case 'step-finish': {
+              // Step finished - contains the thinking text for this step
+              const stepPart = part as any;
+              const payload = stepPart.payload;
+              if (payload?.output?.text) {
+                // Emit the thinking text as text deltas
+                await onTextPart?.(payload.output.text);
+              }
+              break;
+            }
             case 'tool-call': {
               // Tool call data is nested in payload at runtime
               const toolCallPart = part as any;
