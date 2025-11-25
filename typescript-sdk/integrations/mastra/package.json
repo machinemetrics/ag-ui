@@ -1,6 +1,6 @@
 {
   "name": "@m12s/agui-mastra",
-  "version": "0.0.13",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
