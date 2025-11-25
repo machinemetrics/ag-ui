@@ -24,10 +24,7 @@
     "unlink:global": "pnpm unlink --global"
   },
   "dependencies": {
-    "@ai-sdk/ui-utils": "^1.2.0",
-    "@mastra/ai-sdk": "^1.0.1",
     "@mastra/client-js": "^0.10.18",
-    "ai": "^5.0.0",
     "rxjs": "7.8.1"
   },
   "peerDependencies": {

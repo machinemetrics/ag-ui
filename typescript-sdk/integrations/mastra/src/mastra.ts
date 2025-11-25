@@ -14,15 +14,12 @@ import type {
   ToolCallStartEvent,
 } from "@ag-ui/client";
 import { AbstractAgent, EventType } from "@ag-ui/client";
-import { processDataStream } from "@ai-sdk/ui-utils";
 import type { StorageThreadType } from "@mastra/core";
 import { Agent as LocalMastraAgent } from "@mastra/core/agent";
 import { RuntimeContext } from "@mastra/core/runtime-context";
 import { randomUUID } from "crypto";
 import { Observable } from "rxjs";
 import { MastraClient } from "@mastra/client-js";
-import { toAISdkFormat } from "@mastra/ai-sdk";
-import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 type RemoteMastraAgent = ReturnType<MastraClient["getAgent"]>;
 import {
   convertAGUIMessagesToMastra,
@@ -112,7 +109,6 @@ export class MastraAgent extends AbstractAgent {
                 agentId: this.agentId!,
                 resourceId: this.resourceId,
                 threadId,
-                limit: 100,
               },
               agent,
             );
@@ -155,12 +151,11 @@ export class MastraAgent extends AbstractAgent {
                 agentId: this.agentId!,
                 resourceId: this.resourceId,
                 threadId: input.threadId,
-                limit: 100,
               },
               this.agent,
             );
 
-            if (stateSnapshot.threadsExist && stateSnapshot.messages.length > 0) {
+            if (stateSnapshot.messages.length > 0) {
               const messagesSnapshotEvent: MessagesSnapshotEvent = {
                 type: EventType.MESSAGES_SNAPSHOT,
                 messages: stateSnapshot.messages as Message[],
