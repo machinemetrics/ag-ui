@@ -59,9 +59,7 @@ export function mastraMsgToAGUI(mastraMessage: MastraMemoryMessage): AGUIMessage
           });
         } else if (part.type === "tool-result") {
           toolCallId = part.toolCallId || part.id;
-          textContent = typeof part.result === "string"
-            ? part.result
-            : JSON.stringify(part.result);
+          textContent = typeof part.result === "string" ? part.result : JSON.stringify(part.result);
         }
       }
     }
@@ -95,8 +93,7 @@ export function mastraMsgsToAGUI(mastraMessages: MastraMemoryMessage[]): AGUIMes
     try {
       aguiMessages.push(mastraMsgToAGUI(mastraMsg));
     } catch (error) {
-      // Log error for debugging but continue processing other messages
-      console.error('[mastraMsgsToAGUI] Error converting message:', error, 'Message:', mastraMsg);
+      // Silently handle error
     }
   }
 
@@ -130,7 +127,7 @@ export function aguiMessagesToLangChain(messages: AGUIMessage[]): LangChainMessa
   return messages.map((msg) => {
     const langChainMsg: LangChainMessage = {
       id: msg.id,
-      type: msg.role === "user" ? "human" : msg.role === "assistant" ? "ai" : msg.role as any,
+      type: msg.role === "user" ? "human" : msg.role === "assistant" ? "ai" : (msg.role as any),
       content: msg.content || "",
     };
 
