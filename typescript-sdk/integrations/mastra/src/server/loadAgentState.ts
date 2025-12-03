@@ -16,8 +16,6 @@ export interface LoadAgentStateInput {
   resourceId?: string;
   /** The unique identifier for the conversation thread */
   threadId: string;
-  /** Maximum number of messages to load (default: 100) */
-  limit?: number;
 }
 
 /**
@@ -41,7 +39,7 @@ export interface AgentStateSnapshot {
 /**
  * Loads historical agent state (messages and working memory) from a thread.
  *
- * @param input - Configuration including threadId, optional resourceId for scoping, and message limit
+ * @param input - Configuration including threadId and optional resourceId for scoping
  * @param mastraAgent - The local Mastra agent instance with memory capabilities
  * @returns A snapshot containing thread messages and working memory, or an empty snapshot if:
  *   - The agent has no memory configured
@@ -56,7 +54,7 @@ export async function loadAgentState(
   input: LoadAgentStateInput,
   mastraAgent: LocalMastraAgent,
 ): Promise<AgentStateSnapshot> {
-  const { agentId, resourceId, threadId, limit = 100 } = input;
+  const { agentId, resourceId, threadId } = input;
 
   const emptySnapshot: AgentStateSnapshot = {
     threadsExist: false,

@@ -27,6 +27,11 @@ export interface MastraMemoryMessage {
 export function mastraMsgToAGUI(mastraMessage: MastraMemoryMessage): AGUIMessage {
   const { id, role, content, metadata } = mastraMessage;
 
+  // Ensure we always have an ID - critical for CopilotKit GraphQL serialization
+  if (!id) {
+    throw new Error(`Message missing required 'id' field. Role: ${role}`);
+  }
+
   let textContent = "";
   let toolCalls: AGUIMessage["toolCalls"] = undefined;
   let toolCallId: string | undefined = undefined;
@@ -54,9 +59,7 @@ export function mastraMsgToAGUI(mastraMessage: MastraMemoryMessage): AGUIMessage
           });
         } else if (part.type === "tool-result") {
           toolCallId = part.toolCallId || part.id;
-          textContent = typeof part.result === "string"
-            ? part.result
-            : JSON.stringify(part.result);
+          textContent = typeof part.result === "string" ? part.result : JSON.stringify(part.result);
         }
       }
     }
@@ -124,7 +127,7 @@ export function aguiMessagesToLangChain(messages: AGUIMessage[]): LangChainMessa
   return messages.map((msg) => {
     const langChainMsg: LangChainMessage = {
       id: msg.id,
-      type: msg.role === "user" ? "human" : msg.role === "assistant" ? "ai" : msg.role as any,
+      type: msg.role === "user" ? "human" : msg.role === "assistant" ? "ai" : (msg.role as any),
       content: msg.content || "",
     };
 

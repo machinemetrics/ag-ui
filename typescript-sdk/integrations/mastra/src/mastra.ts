@@ -14,7 +14,6 @@ import type {
   ToolCallStartEvent,
 } from "@ag-ui/client";
 import { AbstractAgent, EventType } from "@ag-ui/client";
-import { processDataStream } from "@ai-sdk/ui-utils";
 import type { StorageThreadType } from "@mastra/core";
 import { Agent as LocalMastraAgent } from "@mastra/core/agent";
 import { RuntimeContext } from "@mastra/core/runtime-context";
@@ -110,7 +109,6 @@ export class MastraAgent extends AbstractAgent {
                 agentId: this.agentId!,
                 resourceId: this.resourceId,
                 threadId,
-                limit: 100,
               },
               agent,
             );
@@ -153,12 +151,11 @@ export class MastraAgent extends AbstractAgent {
                 agentId: this.agentId!,
                 resourceId: this.resourceId,
                 threadId: input.threadId,
-                limit: 100,
               },
               this.agent,
             );
 
-            if (stateSnapshot.threadsExist && stateSnapshot.messages.length > 0) {
+            if (stateSnapshot.messages.length > 0) {
               const messagesSnapshotEvent: MessagesSnapshotEvent = {
                 type: EventType.MESSAGES_SNAPSHOT,
                 messages: stateSnapshot.messages as Message[],
@@ -236,10 +233,12 @@ export class MastraAgent extends AbstractAgent {
               };
               subscriber.next(startEvent);
 
+              // Ensure args is always an object, even if undefined
+              const args = streamPart.args !== undefined ? streamPart.args : {};
               const argsEvent: ToolCallArgsEvent = {
                 type: EventType.TOOL_CALL_ARGS,
                 toolCallId: streamPart.toolCallId,
-                delta: JSON.stringify(streamPart.args),
+                delta: JSON.stringify(args),
               };
               subscriber.next(argsEvent);
 
@@ -250,11 +249,13 @@ export class MastraAgent extends AbstractAgent {
               subscriber.next(endEvent);
             },
             onToolResultPart(streamPart) {
+              const resultMessageId = randomUUID();
+
               const toolCallResultEvent: ToolCallResultEvent = {
                 type: EventType.TOOL_CALL_RESULT,
                 toolCallId: streamPart.toolCallId,
                 content: JSON.stringify(streamPart.result),
-                messageId: randomUUID(),
+                messageId: resultMessageId,
                 role: "tool",
               };
 
@@ -430,43 +431,56 @@ export class MastraAgent extends AbstractAgent {
             ? { ...baseStreamOptions, threadId, resourceId }
             : baseStreamOptions;
 
-        const response = await this.agent.stream(convertedMessages, streamOptions);
+        const mastraStream = await this.agent.stream(convertedMessages, streamOptions);
 
-        // For local agents, the response should already be a stream
-        // Process it using the agent's built-in streaming mechanism
-        if (response && typeof response === "object") {
-          // If the response has a toDataStreamResponse method, use it
-          if (
-            "toDataStreamResponse" in response &&
-            typeof response.toDataStreamResponse === "function"
-          ) {
-            const dataStreamResponse = response.toDataStreamResponse();
-            if (dataStreamResponse && dataStreamResponse.body) {
-              await processDataStream({
-                stream: dataStreamResponse.body,
-                onTextPart,
-                onToolCallPart,
-                onToolResultPart,
-                onFinishMessagePart,
-              });
-              await onRunFinished?.();
-            } else {
-              throw new Error("Invalid data stream response from local agent");
+        // Iterate over fullStream and handle each part
+        for await (const part of mastraStream.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              await onTextPart?.(part.textDelta);
+              break;
+            case 'step-start':
+              // Step started - no text content to emit
+              break;
+            case 'step-finish': {
+              // Step finished - contains the thinking text for this step
+              const stepPart = part as any;
+              const payload = stepPart.payload;
+              if (payload?.output?.text) {
+                // Emit the thinking text as text deltas
+                await onTextPart?.(payload.output.text);
+              }
+              break;
             }
-          } else {
-            // If it's already a readable stream, process it directly
-            await processDataStream({
-              stream: response as any,
-              onTextPart,
-              onToolCallPart,
-              onToolResultPart,
-              onFinishMessagePart,
-            });
-            await onRunFinished?.();
+            case 'tool-call': {
+              // Tool call data is nested in payload at runtime
+              const toolCallPart = part as any;
+              const payload = toolCallPart.payload || toolCallPart;
+              await onToolCallPart?.({
+                toolCallId: payload.toolCallId,
+                toolName: payload.toolName,
+                args: payload.args !== undefined ? payload.args : {},
+              });
+              break;
+            }
+            case 'tool-result': {
+              // Tool result data is nested in payload at runtime
+              const toolResultPart = part as any;
+              const payload = toolResultPart.payload || toolResultPart;
+              await onToolResultPart?.({
+                toolCallId: payload.toolCallId,
+                result: payload.result,
+              });
+              break;
+            }
+            case 'finish':
+              await onFinishMessagePart?.();
+              break;
+            case 'error':
+              throw new Error(String(part.error));
           }
-        } else {
-          throw new Error("Invalid response from local agent");
         }
+        await onRunFinished?.();
       } catch (error) {
         onError?.(error as Error);
       }
